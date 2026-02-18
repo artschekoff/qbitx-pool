@@ -1,0 +1,49 @@
+# ─── Q-BitX Mining Pool config ─────────────────────────────
+# Copy this file to config.yaml and fill in real values.
+# PostgreSQL connection is read from env var:
+# DATABASE_URL=postgresql://...
+
+# Stratum v1 listener
+stratum:
+  listen: "0.0.0.0:3333" # host:port for miners
+  max_conn: 500 # max simultaneous connections
+
+# qbitx daemon RPC
+daemon:
+  url: "http://127.0.0.1:8332"
+  user: ""
+  pass: ""
+
+# Coinbase / payout
+coinbase:
+  address: "" # REQUIRED – your P2PKH or PQ payout address
+  tag: "QBXPOOL" # up to 20 bytes, appears in coinbase scriptSig
+  reward: 1250000000 # block reward in satoshi (12.5 QBX)
+  payout_spk_hex: "" # optional raw output scriptPubKey hex (overrides address)
+
+# Job maker
+jobs:
+  poll_interval: 10 # seconds between getblocktemplate calls
+  notify_on_new_block: true # immediate job push when tip changes
+
+# Share difficulty
+difficulty:
+  start: 30000 # initial difficulty sent to miners (ASIC-friendly default)
+  gpu_start: 10 # applied when worker name contains \"gpu\"
+  asic_start: 30000 # applied when worker name contains \"asic\"
+  min: 64
+  max: 10000000
+  target_time: 10 # target seconds per share (vardiff)
+  retarget_interval: 30 # seconds between vardiff adjustments
+
+# Rate limiting
+max_sps: 300 # max shares per second per connection
+max_sps_grace_sec: 3 # grace period before enforcing
+
+# Storage
+shares_file: "data/shares.json" # deprecated (kept for backward compatibility)
+
+# Logging
+log:
+  level: "info" # debug | info | warn | error
+  dir: "" # log directory (empty = stdout only)
