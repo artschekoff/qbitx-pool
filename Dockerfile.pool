@@ -11,6 +11,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/qbxpool ./cmd/pool
 FROM alpine:latest
 WORKDIR /app
 COPY --from=builder /bin/qbxpool /bin/qbxpool
+COPY migrations /app/migrations
 COPY config.example.yaml /app/config.yaml
 EXPOSE 3333
 ENTRYPOINT ["/bin/qbxpool", "/app/config.yaml"]

@@ -40,6 +40,10 @@ func main() {
 	if err := validateDatabaseURL(cfg); err != nil {
 		log.Fatalf("config: %v", err)
 	}
+	if err := accounting.RunMigrations(context.Background(), cfg.DatabaseURL, "migrations"); err != nil {
+		log.Fatalf("migrations: %v", err)
+	}
+	log.Printf("  migrate  : up to date")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

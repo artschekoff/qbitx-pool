@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile.pool
     image: qbxpool:latest
+    pull_policy: always
     container_name: qbxpool
     ports:
       - "3333:3333"
@@ -18,6 +19,7 @@ services:
       context: .
       dockerfile: Dockerfile.miner
     image: miner:latest
+    pull_policy: always
     container_name: miner
     depends_on:
       - pool
