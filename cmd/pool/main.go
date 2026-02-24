@@ -37,6 +37,7 @@ func main() {
 	log.Printf("  daemon   : %s", cfg.Daemon.URL)
 	log.Printf("  payout   : %s", cfg.Coinbase.Address)
 	log.Printf("  shares   : postgresql")
+	log.Printf("  payouts  : enabled=%t", cfg.Payouts.Enabled)
 	if err := validateDatabaseURL(cfg); err != nil {
 		log.Fatalf("config: %v", err)
 	}
@@ -65,6 +66,15 @@ func main() {
 		log.Fatalf("share store: %v", err)
 	}
 	defer store.Close()
+
+	if cfg.Payouts.Enabled {
+		engine, err := accounting.NewPayoutEngine(cfg.DatabaseURL, cfg, rpc)
+		if err != nil {
+			log.Fatalf("payout engine: %v", err)
+		}
+		defer engine.Close()
+		go engine.Run(ctx)
+	}
 
 	srv := stratum.NewServer(cfg, jm, val, store)
 	go func() {

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23-alpine AS builder
 WORKDIR /app
 COPY go.mod .
 COPY go.sum .
@@ -12,6 +12,6 @@ FROM alpine:latest
 WORKDIR /app
 COPY --from=builder /bin/qbxpool /bin/qbxpool
 COPY migrations /app/migrations
-COPY config.example.yaml /app/config.yaml
+
 EXPOSE 3333
 ENTRYPOINT ["/bin/qbxpool", "/app/config.yaml"]

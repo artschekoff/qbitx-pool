@@ -217,6 +217,7 @@ func (cn *Conn) handleSubmit(req *Request) {
 	auth := cn.authorized
 	worker := cn.worker
 	currentJob := cn.currentJob
+	assignedDiff := cn.diff
 	cn.mu.Unlock()
 	if !auth {
 		cn.sendError(req.ID, 24, "unauthorized")
@@ -254,11 +255,15 @@ func (cn *Conn) handleSubmit(req *Request) {
 		entryType = "block"
 	}
 	err := cn.server.store.InsertAcceptedShare(context.Background(), accounting.ShareRecord{
-		Worker:        worker,
-		Diff:          result.Diff,
+		Worker: worker,
+		// Use the difficulty assigned to the worker (vardiff target) for accounting,
+		// rather than result.Diff reported by the validator, so stored shares match
+		// the difficulty communicated to the miner.
+		Diff:          assignedDiff,
 		Time:          now,
 		Type:          entryType,
 		SubmissionKey: submissionKey,
+		BlockHash:     result.Hash,
 	})
 	if err != nil {
 		log.Printf("[stratum] share accounting failed worker=%s: %v", worker, err)

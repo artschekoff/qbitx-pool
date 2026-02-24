@@ -1,26 +1,76 @@
 services:
+  qbitx:
+    hostname: qbitx
+    platform: linux/amd64
+    image: ghcr.io/artschekoff/qbit-docker
+    pull_policy: always
+    container_name: qbit-docker
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - >
+        cd /opt/qbitx &&
+        ./qbitx -daemon -server=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcport=8332 -rpcuser=qbx -rpcpassword=qbxpass &&
+        tail -f /dev/null
+    restart: unless-stopped
+    #ports:
+    #- "8334:8334"
+    #- "8332:8332"
+    volumes:
+      - ./docker/qbitx-data:/root/.qbitx
+    healthcheck:
+      test: ["CMD", "pgrep", "qbitx"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: qbitx
+    ports:
+      - "5533:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d qbitx"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - app-network
+
   pool:
+    image: ghcr.io/artschekoff/qbxpool:latest
     build:
       context: .
-      dockerfile: Dockerfile.pool
-    image: qbxpool:latest
+      dockerfile: Dockerfile
     pull_policy: always
     container_name: qbxpool
-    ports:
-      - "3333:3333"
+    #ports:
+    #- "3333:3333"
     env_file:
       - .env
-    volumes:
-      - ./config.yaml:/app/config.yaml:ro
-    restart: unless-stopped
-
-  miner:
-    build:
-      context: .
-      dockerfile: Dockerfile.miner
-    image: miner:latest
-    pull_policy: always
-    container_name: miner
     depends_on:
-      - pool
-    entrypoint: ["/bin/miner", "qbxpool:3333", "worker.001"]
+      postgres:
+        condition: service_healthy
+      qbitx:
+        condition: service_healthy
+    volumes:
+      - ./config.production.yaml:/app/config.yaml:ro
+    restart: unless-stopped
+    networks:
+      - app-network
+
+volumes:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge

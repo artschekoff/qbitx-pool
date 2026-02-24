@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -139,4 +140,58 @@ func (c *Client) GetBlockCount() (int64, error) {
 		return 0, err
 	}
 	return height, nil
+}
+
+func (c *Client) SendMany(amounts map[string]float64) (string, error) {
+	// Validate payout addresses
+	for addr := range amounts {
+		if !isValidAddress(addr) {
+			return "", fmt.Errorf("invalid payout address: %s", addr)
+		}
+	}
+	raw, err := c.call("sendmany", "", amounts)
+	if err != nil {
+		return "", err
+	}
+	var txid string
+	if err := json.Unmarshal(raw, &txid); err != nil {
+		return "", fmt.Errorf("parse sendmany txid: %w", err)
+	}
+	if txid == "" {
+		return "", fmt.Errorf("empty txid from sendmany")
+	}
+	return txid, nil
+}
+
+// isValidAddress performs a basic validation of a payout address.
+// This is a placeholder and should be replaced with actual address validation logic for the coin/network.
+func isValidAddress(addr string) bool {
+	// Example: check length and allowed characters (replace with real validation as needed)
+	if len(addr) < 26 || len(addr) > 35 {
+		return false
+	}
+	for _, c := range addr {
+		if !(('1' <= c && c <= '9') || ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z')) {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *Client) LookupBlockConfirmations(hash string) (int64, bool, error) {
+	raw, err := c.call("getblock", hash)
+	if err != nil {
+		var rpcErr *rpcError
+		if errors.As(err, &rpcErr) && rpcErr.Code == -5 {
+			return 0, false, nil
+		}
+		return 0, false, err
+	}
+	var out struct {
+		Confirmations int64 `json:"confirmations"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return 0, false, fmt.Errorf("parse getblock: %w", err)
+	}
+	return out.Confirmations, true, nil
 }

@@ -1,0 +1,57 @@
+# ─── Q-BitX Mining Pool config ─────────────────────────────
+
+# Stratum v1 listener
+stratum:
+  listen: "0.0.0.0:3333"
+  max_conn: 500
+
+# qbitx daemon RPC
+daemon:
+  url: "http://qbitx:8332"
+  #url: "https://83.217.213.118:8332"
+  user: "qbx"
+  pass: "qbxpass"
+# Coinbase / payout
+
+coinbase:
+  address: "MUwWzHHCFkW2V62N8xgXX1rNaDXQ6Hxj19"
+  tag: "QBXPOOL"
+  reward: 1250000000 # 12.5 QBX
+  payout_spk_hex: ""
+  developer_fee_percent: 1
+  developer_fee_address: "MWnxrbCdBdtUP2M5NZ7v5bYrbZ78ZsMBzh"
+
+# Job maker
+jobs:
+  poll_interval: 10
+  notify_on_new_block: true
+
+# Share difficulty
+difficulty:
+  start: 30000
+  gpu_start: 10
+  asic_start: 30000
+  min: 64
+  max: 10000000
+  target_time: 10
+  retarget_interval: 30
+
+# Payout engine (PPLNS + ledger)
+payouts:
+  # NOTE: Payouts are disabled by default in this production config.
+  # Set enabled: true only after verifying pool operation and wallet setup.
+  enabled: false
+  scheme: "lprop"
+  pplns_window: 1000
+  pool_fee_percent: 0
+  min_payout_sat: 100000
+  interval_sec: 60
+
+# Rate limiting
+max_sps: 300 # max shares per second per connection
+max_sps_grace_sec: 3 # grace period before enforcing
+
+# Logging
+log:
+  level: "info"
+  dir: "/root/qbitx_pool/logs"

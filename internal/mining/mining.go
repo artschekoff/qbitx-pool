@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 )
 
 // DoubleSHA256 computes SHA256(SHA256(data)).
@@ -33,7 +34,15 @@ func ReverseBytes(b []byte) {
 // insert extranonce1 + extranonce2 in between.
 //
 // Returns (coinbase1_hex, coinbase2_hex).
-func BuildCoinbaseTx(height int64, coinbaseValue int64, address string, tag string, payoutSPKHex string) (string, string) {
+func BuildCoinbaseTx(
+	height int64,
+	coinbaseValue int64,
+	address string,
+	tag string,
+	payoutSPKHex string,
+	developerFeePercent float64,
+	developerFeeAddress string,
+) (string, string) {
 	heightBytes := encodeHeight(height)
 	tagBytes := []byte(tag)
 	scriptSigPrefix := append(heightBytes, tagBytes...)
@@ -55,24 +64,73 @@ func BuildCoinbaseTx(height int64, coinbaseValue int64, address string, tag stri
 	var cb2 []byte
 	// sequence
 	cb2 = appendLE32(cb2, 0xffffffff)
-	// output count
-	cb2 = append(cb2, 0x01)
-	// value (8 bytes LE)
-	cb2 = appendLE64(cb2, coinbaseValue)
-	// output script
-	var pkScript []byte
+
+	devFeeValue := calcDeveloperFee(coinbaseValue, developerFeePercent)
+	mainValue := coinbaseValue - devFeeValue
+
+	// output script (main)
+	var mainPkScript []byte
 	if payoutSPKHex != "" {
-		pkScript, _ = hex.DecodeString(payoutSPKHex)
+		mainPkScript, _ = hex.DecodeString(payoutSPKHex)
 	}
-	if len(pkScript) == 0 {
-		pkScript = buildPayoutScript(address)
+	if len(mainPkScript) == 0 {
+		mainPkScript = buildPayoutScript(address)
 	}
-	cb2 = append(cb2, encodeVarInt(uint64(len(pkScript)))...)
-	cb2 = append(cb2, pkScript...)
+
+	// output count
+	outputCount := byte(1)
+	if devFeeValue > 0 {
+		outputCount = 2
+	}
+	cb2 = append(cb2, outputCount)
+
+	// main output
+	cb2 = appendLE64(cb2, mainValue)
+	cb2 = append(cb2, encodeVarInt(uint64(len(mainPkScript)))...)
+	cb2 = append(cb2, mainPkScript...)
+
+	// developer fee output
+	if devFeeValue > 0 {
+		devPkScript := buildPayoutScript(developerFeeAddress)
+		cb2 = appendLE64(cb2, devFeeValue)
+		cb2 = append(cb2, encodeVarInt(uint64(len(devPkScript)))...)
+		cb2 = append(cb2, devPkScript...)
+	}
 	// locktime
 	cb2 = appendLE32(cb2, 0)
 
 	return hex.EncodeToString(cb1), hex.EncodeToString(cb2)
+}
+
+func calcDeveloperFee(coinbaseValue int64, developerFeePercent float64) int64 {
+	if coinbaseValue <= 0 || developerFeePercent <= 0 {
+		return 0
+	}
+	if developerFeePercent >= 100 {
+		return coinbaseValue
+	}
+	// Use basis points to keep fee math deterministic for satoshi values.
+	// Validate that developerFeePercent has at most two decimal places by
+	// checking that percent*100 is effectively an integer before converting.
+	scaled := developerFeePercent * 100
+	intPart, fracPart := math.Modf(scaled)
+	if math.Abs(fracPart) > 1e-9 {
+		// Invalid configuration: percentage has more than 2 decimal places.
+		// To keep behavior predictable, treat this as no developer fee.
+		return 0
+	}
+	bps := int64(intPart)
+	if bps <= 0 {
+		return 0
+	}
+	fee := (coinbaseValue * bps) / 10000
+	if fee < 0 {
+		return 0
+	}
+	if fee > coinbaseValue {
+		return coinbaseValue
+	}
+	return fee
 }
 
 // buildPayoutScript creates a P2PKH script for a base58check address.

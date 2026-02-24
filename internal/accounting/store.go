@@ -11,6 +11,7 @@ type ShareRecord struct {
 	Time          time.Time
 	Type          string
 	SubmissionKey string
+	BlockHash     string
 }
 
 type ShareStore interface {

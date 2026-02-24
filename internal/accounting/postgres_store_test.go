@@ -25,8 +25,8 @@ func TestPostgresStoreInsertAcceptedShare_Share(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(got) != 5 {
-		t.Fatalf("expected 5 args, got %d", len(got))
+	if len(got) != 6 {
+		t.Fatalf("expected 6 args, got %d", len(got))
 	}
 	if got[0] != "worker.001" {
 		t.Fatalf("unexpected worker: %v", got[0])
@@ -41,12 +41,17 @@ func TestPostgresStoreInsertAcceptedShare_Share(t *testing.T) {
 	if got[3] != "share" {
 		t.Fatalf("unexpected type: %v", got[3])
 	}
+	if got[5] != nil {
+		t.Fatalf("unexpected block hash for share: %v", got[5])
+	}
 }
 
 func TestPostgresStoreInsertAcceptedShare_Block(t *testing.T) {
 	var gotType interface{}
+	var gotHash interface{}
 	store := newPostgresStoreWithExec(func(_ context.Context, _ string, args ...interface{}) error {
 		gotType = args[3]
+		gotHash = args[5]
 		return nil
 	})
 
@@ -56,12 +61,16 @@ func TestPostgresStoreInsertAcceptedShare_Block(t *testing.T) {
 		Time:          time.Now(),
 		Type:          "block",
 		SubmissionKey: "x",
+		BlockHash:     "000000000000000000000000000000000000000000000000000000000000abcd",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if gotType != "block" {
 		t.Fatalf("unexpected type: %v", gotType)
+	}
+	if gotHash == "" {
+		t.Fatalf("expected block hash to be set")
 	}
 }
 

@@ -32,16 +32,22 @@ func NewPostgresStore(databaseURL string) (*PostgresStore, error) {
 
 func (s *PostgresStore) InsertAcceptedShare(ctx context.Context, r ShareRecord) error {
 	const q = `
-INSERT INTO shares (worker, diff, submitted_at, share_type, submission_key)
-VALUES ($1, $2, $3, $4, $5)
-`
+	INSERT INTO shares (worker, diff, submitted_at, share_type, submission_key, block_hash)
+	VALUES ($1, $2, $3, $4, $5, $6)
+	`
 	if r.Type != "share" && r.Type != "block" {
 		return fmt.Errorf("invalid share type: %s", r.Type)
 	}
 	if r.Diff <= 0 {
 		return fmt.Errorf("invalid diff: %.8f", r.Diff)
 	}
-	err := s.execFn(ctx, q, r.Worker, r.Diff, r.Time.UTC(), r.Type, r.SubmissionKey)
+	var blockHashPtr interface{}
+	if r.BlockHash == "" {
+		blockHashPtr = nil
+	} else {
+		blockHashPtr = r.BlockHash
+	}
+	err := s.execFn(ctx, q, r.Worker, r.Diff, r.Time.UTC(), r.Type, r.SubmissionKey, blockHashPtr)
 	if err != nil {
 		return fmt.Errorf("insert share: %w", err)
 	}

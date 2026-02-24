@@ -135,6 +135,8 @@ func (m *Maker) buildJob(tpl *daemon.BlockTemplate, clean bool) (*Job, error) {
 		tpl.Height, tpl.CoinbaseValue,
 		m.cfg.Coinbase.Address, m.cfg.Coinbase.Tag,
 		m.cfg.Coinbase.PayoutSPKHex,
+		m.cfg.Coinbase.DeveloperFeePercent,
+		m.cfg.Coinbase.DeveloperFeeAddress,
 	)
 
 	txHashes := make([][32]byte, 0, len(tpl.Transactions))

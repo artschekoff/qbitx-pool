@@ -20,6 +20,8 @@ coinbase:
   tag: "QBXPOOL" # up to 20 bytes, appears in coinbase scriptSig
   reward: 1250000000 # block reward in satoshi (12.5 QBX)
   payout_spk_hex: "" # optional raw output scriptPubKey hex (overrides address)
+  developer_fee_percent: 0 # percent of coinbase value sent to developer address
+  developer_fee_address: "" # required when developer_fee_percent > 0
 
 # Job maker
 jobs:
@@ -35,6 +37,16 @@ difficulty:
   max: 10000000
   target_time: 10 # target seconds per share (vardiff)
   retarget_interval: 30 # seconds between vardiff adjustments
+
+# Payout engine (L-PROP / SOLO + ledger)
+payouts:
+  enabled: false # set true to run auto payouts
+  scheme: "lprop" # lprop | solo
+  pplns_window: 1000 # deprecated for l-prop; kept for backward compatibility
+  pool_fee_percent: 0 # operator fee taken from block reward after dev fee
+  min_payout_sat: 100000 # minimum balance before sending tx (in satoshi)
+  interval_sec: 60 # settlement + payout loop interval
+  block_maturity: 100 # confirmations required before settlement/payout
 
 # Rate limiting
 max_sps: 300 # max shares per second per connection
