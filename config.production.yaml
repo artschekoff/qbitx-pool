@@ -1,5 +1,9 @@
 # ─── Q-BitX Mining Pool config ─────────────────────────────
 
+# Pool identity
+pool:
+  id: "main"
+
 # Stratum v1 listener
 stratum:
   listen: "0.0.0.0:3333"

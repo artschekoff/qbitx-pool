@@ -25,24 +25,27 @@ func TestPostgresStoreInsertAcceptedShare_Share(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(got) != 6 {
-		t.Fatalf("expected 6 args, got %d", len(got))
+	if len(got) != 7 {
+		t.Fatalf("expected 7 args, got %d", len(got))
 	}
-	if got[0] != "worker.001" {
-		t.Fatalf("unexpected worker: %v", got[0])
+	if got[0] != "default" {
+		t.Fatalf("unexpected pool id: %v", got[0])
 	}
-	if got[1] != 12.5 {
-		t.Fatalf("unexpected diff: %v", got[1])
+	if got[1] != "worker.001" {
+		t.Fatalf("unexpected worker: %v", got[1])
 	}
-	ts, ok := got[2].(time.Time)
+	if got[2] != 12.5 {
+		t.Fatalf("unexpected diff: %v", got[2])
+	}
+	ts, ok := got[3].(time.Time)
 	if !ok || ts.Location() != time.UTC {
-		t.Fatalf("expected UTC timestamp, got %T %v", got[2], got[2])
+		t.Fatalf("expected UTC timestamp, got %T %v", got[3], got[3])
 	}
-	if got[3] != "share" {
-		t.Fatalf("unexpected type: %v", got[3])
+	if got[4] != "share" {
+		t.Fatalf("unexpected type: %v", got[4])
 	}
-	if got[5] != nil {
-		t.Fatalf("unexpected block hash for share: %v", got[5])
+	if got[6] != nil {
+		t.Fatalf("unexpected block hash for share: %v", got[6])
 	}
 }
 
@@ -50,8 +53,8 @@ func TestPostgresStoreInsertAcceptedShare_Block(t *testing.T) {
 	var gotType interface{}
 	var gotHash interface{}
 	store := newPostgresStoreWithExec(func(_ context.Context, _ string, args ...interface{}) error {
-		gotType = args[3]
-		gotHash = args[5]
+		gotType = args[4]
+		gotHash = args[6]
 		return nil
 	})
 

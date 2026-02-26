@@ -9,20 +9,22 @@ import (
 
 type PostgresStore struct {
 	pool   *pgxpool.Pool
+	poolID string
 	execFn func(ctx context.Context, sql string, args ...interface{}) error
 }
 
 func newPostgresStoreWithExec(execFn func(ctx context.Context, sql string, args ...interface{}) error) *PostgresStore {
-	return &PostgresStore{execFn: execFn}
+	return &PostgresStore{execFn: execFn, poolID: "default"}
 }
 
-func NewPostgresStore(databaseURL string) (*PostgresStore, error) {
+func NewPostgresStore(databaseURL string, poolID string) (*PostgresStore, error) {
 	pool, err := pgxpool.New(context.Background(), databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("postgres connect: %w", err)
 	}
 	return &PostgresStore{
-		pool: pool,
+		pool:   pool,
+		poolID: poolID,
 		execFn: func(ctx context.Context, sql string, args ...interface{}) error {
 			_, err := pool.Exec(ctx, sql, args...)
 			return err
@@ -32,8 +34,8 @@ func NewPostgresStore(databaseURL string) (*PostgresStore, error) {
 
 func (s *PostgresStore) InsertAcceptedShare(ctx context.Context, r ShareRecord) error {
 	const q = `
-	INSERT INTO shares (worker, diff, submitted_at, share_type, submission_key, block_hash)
-	VALUES ($1, $2, $3, $4, $5, $6)
+	INSERT INTO shares (pool_id, worker, diff, submitted_at, share_type, submission_key, block_hash)
+	VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 	if r.Type != "share" && r.Type != "block" {
 		return fmt.Errorf("invalid share type: %s", r.Type)
@@ -47,7 +49,7 @@ func (s *PostgresStore) InsertAcceptedShare(ctx context.Context, r ShareRecord) 
 	} else {
 		blockHashPtr = r.BlockHash
 	}
-	err := s.execFn(ctx, q, r.Worker, r.Diff, r.Time.UTC(), r.Type, r.SubmissionKey, blockHashPtr)
+	err := s.execFn(ctx, q, s.poolID, r.Worker, r.Diff, r.Time.UTC(), r.Type, r.SubmissionKey, blockHashPtr)
 	if err != nil {
 		return fmt.Errorf("insert share: %w", err)
 	}

@@ -9,6 +9,7 @@ import (
 )
 
 type Config struct {
+	Pool           PoolCfg       `yaml:"pool"`
 	Stratum        StratumCfg    `yaml:"stratum"`
 	Daemon         DaemonCfg     `yaml:"daemon"`
 	Coinbase       CoinbaseCfg   `yaml:"coinbase"`
@@ -25,6 +26,10 @@ type Config struct {
 type StratumCfg struct {
 	Listen  string `yaml:"listen"`
 	MaxConn int    `yaml:"max_conn"`
+}
+
+type PoolCfg struct {
+	ID string `yaml:"id"`
 }
 
 type DaemonCfg struct {
@@ -78,6 +83,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
 	cfg := &Config{
+		Pool:           PoolCfg{ID: "default"},
 		Stratum:        StratumCfg{Listen: ":3333", MaxConn: 4096},
 		Jobs:           JobsCfg{PollInterval: 10, NotifyOnNewBlock: true},
 		Difficulty:     DifficultyCfg{Start: 30000, GPUStart: 10, ASICStart: 30000, Min: 64, Max: 10000000, TargetTime: 10, RetargetInterval: 30},
@@ -89,6 +95,9 @@ func Load(path string) (*Config, error) {
 	}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	if cfg.Pool.ID == "" {
+		return nil, fmt.Errorf("pool.id is required")
 	}
 	cfg.DatabaseURL = os.Getenv("DATABASE_URL")
 	if cfg.Coinbase.Address == "" {

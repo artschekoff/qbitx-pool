@@ -3,6 +3,10 @@
 # PostgreSQL connection is read from env var:
 # DATABASE_URL=postgresql://...
 
+# Pool identity
+pool:
+  id: "main"
+
 # Stratum v1 listener
 stratum:
   listen: "0.0.0.0:3333" # host:port for miners

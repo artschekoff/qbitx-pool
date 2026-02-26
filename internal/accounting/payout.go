@@ -30,6 +30,7 @@ const (
 type PayoutEngine struct {
 	pool   *pgxpool.Pool
 	cfg    *config.Config
+	poolID string
 	sender DaemonSender
 }
 
@@ -38,7 +39,7 @@ func NewPayoutEngine(databaseURL string, cfg *config.Config, sender DaemonSender
 	if err != nil {
 		return nil, fmt.Errorf("postgres connect payout engine: %w", err)
 	}
-	return &PayoutEngine{pool: pool, cfg: cfg, sender: sender}, nil
+	return &PayoutEngine{pool: pool, cfg: cfg, poolID: cfg.Pool.ID, sender: sender}, nil
 }
 
 func (e *PayoutEngine) Close() {
@@ -94,25 +95,27 @@ func (e *PayoutEngine) runCycle(ctx context.Context) error {
 
 func (e *PayoutEngine) syncBlockStates(ctx context.Context) error {
 	if _, err := e.pool.Exec(ctx, `
-INSERT INTO block_states (block_share_id, block_hash, status, confirmations, created_at, updated_at)
-SELECT s.id, s.block_hash, $1, 0, NOW(), NOW()
+INSERT INTO block_states (block_share_id, pool_id, block_hash, status, confirmations, created_at, updated_at)
+SELECT s.id, $1, s.block_hash, $2, 0, NOW(), NOW()
 FROM shares s
-WHERE s.share_type = 'block'
+WHERE s.pool_id = $1
+  AND s.share_type = 'block'
   AND s.block_hash IS NOT NULL
   AND s.block_hash <> ''
   AND NOT EXISTS (
     SELECT 1 FROM block_states bs WHERE bs.block_share_id = s.id
   )
-`, blockStateFound); err != nil {
+`, e.poolID, blockStateFound); err != nil {
 		return fmt.Errorf("insert block states: %w", err)
 	}
 
 	rows, err := e.pool.Query(ctx, `
 SELECT block_share_id, block_hash
 FROM block_states
-WHERE status IN ($1, $2, $3)
+WHERE pool_id = $1
+  AND status IN ($2, $3, $4)
 ORDER BY block_share_id ASC
-`, blockStateFound, blockStateImmature, blockStateMature)
+`, e.poolID, blockStateFound, blockStateImmature, blockStateMature)
 	if err != nil {
 		return fmt.Errorf("load block states: %w", err)
 	}
@@ -140,8 +143,8 @@ ORDER BY block_share_id ASC
 			if _, updErr := e.pool.Exec(ctx, `
 UPDATE block_states
 SET last_error = $2, last_checked_at = NOW(), updated_at = NOW()
-WHERE block_share_id = $1
-`, b.shareID, truncate(err.Error(), 1024)); updErr != nil {
+WHERE block_share_id = $1 AND pool_id = $3
+`, b.shareID, truncate(err.Error(), 1024), e.poolID); updErr != nil {
 				return fmt.Errorf("update block state error for share %d: %w", b.shareID, updErr)
 			}
 			continue
@@ -164,8 +167,8 @@ SET status = $2,
     last_checked_at = NOW(),
     matured_at = CASE WHEN $2 = $4 THEN COALESCE(matured_at, NOW()) ELSE matured_at END,
     updated_at = NOW()
-WHERE block_share_id = $1
-`, b.shareID, nextStatus, confirmations, blockStateMature); err != nil {
+WHERE block_share_id = $1 AND pool_id = $5
+`, b.shareID, nextStatus, confirmations, blockStateMature, e.poolID); err != nil {
 			return fmt.Errorf("update block state for share %d: %w", b.shareID, err)
 		}
 	}
@@ -203,15 +206,17 @@ func (e *PayoutEngine) settleNextBlock(ctx context.Context) (bool, error) {
 SELECT s.id, s.submitted_at, s.submission_key, s.worker, s.diff, s.block_hash
 FROM shares s
 JOIN block_states bst ON bst.block_share_id = s.id
-WHERE s.share_type = 'block'
-  AND bst.status = $1
+WHERE s.pool_id = $1
+  AND bst.pool_id = $1
+  AND s.share_type = 'block'
+  AND bst.status = $2
   AND NOT EXISTS (
-    SELECT 1 FROM block_settlements bs WHERE bs.block_share_id = s.id
+    SELECT 1 FROM block_settlements bs WHERE bs.block_share_id = s.id AND bs.pool_id = $1
   )
 ORDER BY s.id ASC
 LIMIT 1
 FOR UPDATE SKIP LOCKED
-`, blockStateMature)
+`, e.poolID, blockStateMature)
 	err = row.Scan(&blockShareID, &blockTime, &blockKey, &blockWorker, &blockDiff, &blockHash)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -260,19 +265,21 @@ FOR UPDATE SKIP LOCKED
 SELECT COALESCE(MAX(id), 0)
 FROM shares
 WHERE share_type = 'block'
+  AND pool_id = $2
   AND id < $1
-`, blockShareID).Scan(&prevBlockShareID); err != nil {
+`, blockShareID, e.poolID).Scan(&prevBlockShareID); err != nil {
 			return false, fmt.Errorf("load previous found block: %w", err)
 		}
 
 		rows, err := tx.Query(ctx, `
 SELECT worker, diff
 FROM shares
-WHERE id > $1
-  AND id <= $2
+WHERE pool_id = $1
+  AND id > $2
+  AND id <= $3
   AND share_type IN ('share', 'block')
 ORDER BY id ASC
-`, prevBlockShareID, blockShareID)
+`, e.poolID, prevBlockShareID, blockShareID)
 		if err != nil {
 			return false, fmt.Errorf("load l-prop round shares: %w", err)
 		}
@@ -317,30 +324,30 @@ ORDER BY id ASC
 			continue
 		}
 		if _, err := tx.Exec(ctx, `
-INSERT INTO balances (worker, amount_sat, updated_at)
-VALUES ($1, $2, NOW())
-ON CONFLICT (worker)
+INSERT INTO balances (pool_id, worker, amount_sat, updated_at)
+VALUES ($1, $2, $3, NOW())
+ON CONFLICT (pool_id, worker)
 DO UPDATE SET amount_sat = balances.amount_sat + EXCLUDED.amount_sat, updated_at = NOW()
-`, worker, amount); err != nil {
+`, e.poolID, worker, amount); err != nil {
 			return false, fmt.Errorf("upsert balance %s: %w", worker, err)
 		}
 	}
 
 	if _, err := tx.Exec(ctx, `
 INSERT INTO block_settlements (
-  block_share_id, block_submission_key, block_time, reward_sat, miner_reward_sat, pplns_window, processed_at,
+  block_share_id, pool_id, block_submission_key, block_time, reward_sat, miner_reward_sat, pplns_window, processed_at,
   round_start_share_id, round_end_share_id, shares_count, total_weight
 )
-VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8, $9, $10)
-`, blockShareID, blockKey, blockTime, blockRewardSat, minerRewardSat, 0, roundStartShareID, roundEndShareID, sharesCount, totalWeight); err != nil {
+VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9, $10, $11)
+`, blockShareID, e.poolID, blockKey, blockTime, blockRewardSat, minerRewardSat, 0, roundStartShareID, roundEndShareID, sharesCount, totalWeight); err != nil {
 		return false, fmt.Errorf("insert block settlement: %w", err)
 	}
 
 	if _, err := tx.Exec(ctx, `
 UPDATE block_states
 SET status = $2, settled_at = NOW(), updated_at = NOW()
-WHERE block_share_id = $1
-`, blockShareID, blockStateSettled); err != nil {
+WHERE block_share_id = $1 AND pool_id = $3
+`, blockShareID, blockStateSettled, e.poolID); err != nil {
 		return false, fmt.Errorf("mark block settled share_id=%d hash=%s: %w", blockShareID, blockHash, err)
 	}
 
@@ -365,10 +372,11 @@ func (e *PayoutEngine) trySendPayoutBatch(ctx context.Context) (bool, error) {
 	rows, err := tx.Query(ctx, `
 SELECT worker, amount_sat
 FROM balances
-WHERE amount_sat >= $1
+WHERE pool_id = $1
+  AND amount_sat >= $2
 ORDER BY amount_sat DESC
 FOR UPDATE SKIP LOCKED
-`, e.cfg.Payouts.MinPayoutSat)
+`, e.poolID, e.cfg.Payouts.MinPayoutSat)
 	if err != nil {
 		return false, fmt.Errorf("select payout balances: %w", err)
 	}
@@ -396,25 +404,25 @@ FOR UPDATE SKIP LOCKED
 
 	var batchID int64
 	if err := tx.QueryRow(ctx, `
-INSERT INTO payout_batches (status, total_sat, created_at)
-VALUES ('pending', $1, NOW())
+INSERT INTO payout_batches (pool_id, status, total_sat, created_at)
+VALUES ($1, 'pending', $2, NOW())
 RETURNING id
-`, total).Scan(&batchID); err != nil {
+`, e.poolID, total).Scan(&batchID); err != nil {
 		return false, fmt.Errorf("insert payout batch: %w", err)
 	}
 
 	for _, it := range selected {
 		if _, err := tx.Exec(ctx, `
-INSERT INTO payout_batch_items (batch_id, worker, amount_sat)
-VALUES ($1, $2, $3)
-`, batchID, it.worker, it.amount); err != nil {
+INSERT INTO payout_batch_items (pool_id, batch_id, worker, amount_sat)
+VALUES ($1, $2, $3, $4)
+`, e.poolID, batchID, it.worker, it.amount); err != nil {
 			return false, fmt.Errorf("insert payout item: %w", err)
 		}
 		if _, err := tx.Exec(ctx, `
 UPDATE balances
-SET amount_sat = amount_sat - $2, updated_at = NOW()
-WHERE worker = $1
-`, it.worker, it.amount); err != nil {
+SET amount_sat = amount_sat - $3, updated_at = NOW()
+WHERE pool_id = $1 AND worker = $2
+`, e.poolID, it.worker, it.amount); err != nil {
 			return false, fmt.Errorf("debit balance %s: %w", it.worker, err)
 		}
 	}
@@ -438,9 +446,9 @@ WHERE worker = $1
 
 	if _, err := e.pool.Exec(ctx, `
 UPDATE payout_batches
-SET status = 'sent', txid = $2, finished_at = NOW()
-WHERE id = $1
-`, batchID, txid); err != nil {
+SET status = 'sent', txid = $3, finished_at = NOW()
+WHERE id = $1 AND pool_id = $2
+`, batchID, e.poolID, txid); err != nil {
 		return false, fmt.Errorf("mark payout batch sent: %w", err)
 	}
 	return true, nil
@@ -456,8 +464,8 @@ func (e *PayoutEngine) markBatchFailedAndRefund(ctx context.Context, batchID int
 	rows, err := tx.Query(ctx, `
 SELECT worker, amount_sat
 FROM payout_batch_items
-WHERE batch_id = $1
-`, batchID)
+WHERE pool_id = $1 AND batch_id = $2
+`, e.poolID, batchID)
 	if err != nil {
 		return fmt.Errorf("load payout batch items: %w", err)
 	}
@@ -471,9 +479,9 @@ WHERE batch_id = $1
 		}
 		if _, err := tx.Exec(ctx, `
 UPDATE balances
-SET amount_sat = amount_sat + $2, updated_at = NOW()
-WHERE worker = $1
-`, worker, amount); err != nil {
+SET amount_sat = amount_sat + $3, updated_at = NOW()
+WHERE pool_id = $1 AND worker = $2
+`, e.poolID, worker, amount); err != nil {
 			return fmt.Errorf("refund worker %s: %w", worker, err)
 		}
 	}
@@ -483,9 +491,9 @@ WHERE worker = $1
 
 	if _, err := tx.Exec(ctx, `
 UPDATE payout_batches
-SET status = 'failed', error = $2, finished_at = NOW()
-WHERE id = $1
-`, batchID, truncate(reason, 1024)); err != nil {
+SET status = 'failed', error = $3, finished_at = NOW()
+WHERE id = $1 AND pool_id = $2
+`, batchID, e.poolID, truncate(reason, 1024)); err != nil {
 		return fmt.Errorf("mark payout batch failed: %w", err)
 	}
 
