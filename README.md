@@ -1,19 +1,18 @@
 # Q-BitX Pool
 
-Connection guide: [docs/user-connection.md](docs/user-connection.md)
+**A Stratum mining-pool server for the Q-BitX chain — PostgreSQL-backed, multi-instance, with `lprop` and `solo` payout schemes.**
+
+Q-BitX Pool accepts Stratum connections from miners, tracks submitted shares, and pays out as blocks mature. It applies its own SQL migrations on startup, and several instances (for example a `solo` pool and an `lprop` pool) can run side by side against one shared PostgreSQL database.
+
+> **Connecting a miner?** See the [connection guide](docs/user-connection.md).
 
 ## Table of Contents
 
-- [Overview](#overview)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [Payouts](#payouts)
 - [Multi-Pool Setup](#multi-pool-setup)
 - [Project Structure](#project-structure)
-
-## Overview
-
-This repository contains the Q-BitX Stratum mining pool service.
 
 ## Quick Start
 
@@ -24,9 +23,11 @@ make build
 ./bin/qbxpool config.yaml
 ```
 
+The pool applies SQL migrations from `migrations/` automatically on startup.
+
 ## Configuration
 
-Set unique pool identity per running instance:
+Give each running instance a unique pool identity:
 
 ```yaml
 pool:
@@ -39,15 +40,9 @@ Required environment variable:
 DATABASE_URL="postgresql://<user>:<password>@localhost:5533/qbitx?schema=public"
 ```
 
-The pool applies SQL migrations from `migrations/` automatically on startup.
-
 ## Payouts
 
-Supported schemes:
-- `lprop`
-- `solo`
-
-Example:
+Supported schemes: `lprop` and `solo`.
 
 ```yaml
 payouts:
@@ -61,17 +56,19 @@ payouts:
 
 ## Multi-Pool Setup
 
-You can run multiple pool instances (for example `solo` and `lprop`) against one shared PostgreSQL database.
+You can run multiple pool instances against one shared PostgreSQL database. Requirements:
 
-Requirements:
-
-1. Each instance must use a different Stratum port.
-2. Each instance must use a unique `pool.id`.
-3. Keep each instance config consistent with its payout scheme (`solo` or `lprop`).
+1. Each instance uses a different Stratum port.
+2. Each instance uses a unique `pool.id`.
+3. Each instance's config matches its payout scheme (`solo` or `lprop`).
 
 ## Project Structure
 
-- `cmd/pool` - pool server entrypoint
-- `internal` - business logic
-- `migrations` - PostgreSQL migrations
-- `config.example.yaml` - example config
+- `cmd/pool` — pool server entrypoint
+- `internal` — business logic (shares, payouts, config, migrations runner)
+- `migrations` — PostgreSQL migrations, applied on startup
+- `config.example.yaml` — example config (`config.production.yaml` shows a production layout)
+
+---
+
+**Tech:** Go · Stratum · PostgreSQL.
