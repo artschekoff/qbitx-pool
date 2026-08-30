@@ -1,3 +1,5 @@
+![Q-BitX Pool](images/hero.jpg)
+
 # Q-BitX Pool
 
 **A Stratum mining-pool server for the Q-BitX chain — PostgreSQL-backed, multi-instance, with `lprop` and `solo` payout schemes.**
